@@ -72,6 +72,22 @@ Google has no API that lets other apps add to your personal saved places, so the
   into layers by category, and each one links back to its Instagram post. The map then shows up in
   the Google Maps app under *You → Saved → Maps*.
 
+### It runs on a computer, not on your phone
+
+InstaMap needs a Mac, Windows or Linux computer: it does the video analysis there.
+`127.0.0.1` means "this device", so typing it into your phone's browser looks for the app on
+the phone and fails with "refused to connect".
+
+To check progress or pick places from your phone, start it on the computer with
+
+```bash
+instamap serve --lan
+```
+
+and open the address it prints (something like `http://192.168.1.23:8765`) on your phone while
+both are on the same Wi-Fi. Do the Instagram login step on the computer, since that's where the
+login window opens. There's no password on the page, so only use `--lan` on a network you trust.
+
 ### Running it in the background
 
 Leave `instamap` running in a terminal, or start it detached:

@@ -17,12 +17,25 @@ import webbrowser
 from .config import settings
 
 
+def lan_ip() -> str:
+    """This computer's address on the local network."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.168.0.1", 80))  # no packet is sent; this just picks the right interface
+            return s.getsockname()[0]
+        except OSError:
+            return "<this computer's IP>"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="instamap", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd")
     serve = sub.add_parser("serve", help="start the web app (default)")
     serve.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
+    serve.add_argument("--lan", action="store_true",
+                       help="also allow other devices on your Wi-Fi (e.g. your phone) to open the app")
     sub.add_parser("login", help="log in to Instagram")
     sub.add_parser("collections", help="list saved collections")
     run = sub.add_parser("run", help="sync and analyse one collection without the web app")
@@ -64,7 +77,12 @@ def main(argv: list[str] | None = None) -> int:
 
     import uvicorn
     from .server import create_app
-    url = f"http://{settings.host}:{settings.port}"
+    if getattr(args, "lan", False):
+        settings.host = "0.0.0.0"
+    url = f"http://127.0.0.1:{settings.port}"
+    if settings.host == "0.0.0.0":
+        print(f"On your phone (same Wi-Fi), open: http://{lan_ip()}:{settings.port}")
+        print("Anyone on this network can open it too, so only use --lan on a network you trust.")
     if not getattr(args, "no_browser", False):
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     print(f"InstaMap running at {url}  (Ctrl+C to stop; analysis carries on while this is running)")
