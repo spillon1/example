@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InstaMap</title>
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<link rel="stylesheet" href="/static/vendor/MarkerCluster.css">
+<link rel="stylesheet" href="/static/vendor/MarkerCluster.Default.css">
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e2dd;
+  --accent: #d1365f; --accent-ink: #fff; --ok: #1f8a5b; --warn: #b26b00; --bad: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141416; --panel: #1e1e21; --ink: #ececef; --muted: #9a9aa2; --line: #2e2e33;
+          --accent: #ff5c86; --ok: #4cc38a; --warn: #f0a640; --bad: #ff6b60; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       background: var(--bg); color: var(--ink); height: 100vh; display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line);
+         background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0 8px 0 0; }
+.status { flex: 1; min-width: 200px; color: var(--muted); font-size: 13px; }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-top: 4px; max-width: 420px; }
+.bar > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+button, select, input[type=text] { font: inherit; color: inherit; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+main { flex: 1; display: grid; grid-template-columns: minmax(320px, 440px) 1fr; min-height: 0; }
+#side { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+#setup { padding: 14px 16px; border-bottom: 1px solid var(--line); display: none; }
+#setup p { margin: 0 0 10px; color: var(--muted); }
+#setup .row { display: flex; gap: 8px; flex-wrap: wrap; }
+#filters { padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#filters input[type=text] { flex: 1; min-width: 120px; }
+#filters label { color: var(--muted); font-size: 13px; display: flex; gap: 4px; align-items: center; }
+#list { overflow-y: auto; flex: 1; }
+.place { padding: 10px 16px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; cursor: pointer; }
+.place:hover, .place.focus { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.place input[type=checkbox] { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); }
+.place .name { font-weight: 600; }
+.place .meta { color: var(--muted); font-size: 12px; }
+.place .ev { color: var(--muted); font-size: 12px; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place .actions { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.place .actions a, .place .actions button { font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line);
+  color: var(--ink); text-decoration: none; background: transparent; }
+.tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); margin-right: 4px; }
+.tag.saved { color: var(--ok); border-color: var(--ok); }
+.tag.missing { color: var(--warn); border-color: var(--warn); }
+.place.rejected { opacity: .45; }
+#footer { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#footer .count { color: var(--muted); font-size: 13px; flex: 1; }
+#map { height: 100%; }
+.empty { padding: 30px 16px; color: var(--muted); text-align: center; }
+dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); max-width: 560px; width: calc(100% - 32px); }
+dialog::backdrop { background: rgba(0,0,0,.4); }
+dialog h2 { margin-top: 0; font-size: 17px; }
+dialog ol { padding-left: 20px; }
+dialog li { margin-bottom: 8px; }
+.err { color: var(--bad); }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; grid-template-rows: 45vh 1fr; }
+  #mapwrap { order: -1; }
+  #side { border-right: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>📍 InstaMap</h1>
+  <div class="status"><span id="statusText">Starting…</span><div class="bar"><div id="progress"></div></div></div>
+  <button id="syncBtn" title="Check the collection for new saves now">Sync now</button>
+  <button id="retryBtn" style="display:none">Retry failed</button>
+  <button id="changeBtn">Change collection</button>
+</header>
+<main>
+  <section id="side">
+    <div id="setup">
+      <div id="loginStep">
+        <p>Log in to Instagram in the window that opens. Your password goes straight to Instagram; this app only keeps the session cookie on your computer.</p>
+        <div class="row"><button class="primary" id="loginBtn">Log in to Instagram</button></div>
+        <p id="loginMsg" style="margin-top:8px"></p>
+      </div>
+      <div id="collectionStep" style="display:none">
+        <p>Which saved collection should I watch? New saves there are picked up automatically every few hours while the app is running.</p>
+        <div class="row"><select id="collectionSel"><option>Loading…</option></select>
+          <button class="primary" id="useCollectionBtn">Start</button></div>
+        <p id="collectionMsg" style="margin-top:8px"></p>
+      </div>
+    </div>
+    <div id="filters">
+      <input type="text" id="search" placeholder="Search places, cities, countries…">
+      <select id="statusFilter">
+        <option value="active">Not rejected</option>
+        <option value="suggested">To review</option>
+        <option value="approved">Approved</option>
+        <option value="saved">Saved to Google</option>
+        <option value="rejected">Rejected</option>
+        <option value="all">Everything</option>
+      </select>
+      <label><input type="checkbox" id="hideAreas" checked> Hide cities/countries</label>
+      <label><input type="checkbox" id="hideLow"> Hide low confidence</label>
+    </div>
+    <div id="list"></div>
+    <div id="footer">
+      <span class="count" id="selCount"></span>
+      <button id="approveBtn">Approve selected</button>
+      <button class="primary" id="googleBtn">Add to Google Maps…</button>
+    </div>
+  </section>
+  <section id="mapwrap"><div id="map"></div></section>
+</main>
+
+<dialog id="googleDlg">
+  <h2>Add <span id="dlgCount">0</span> places to Google Maps</h2>
+  <p>Google doesn't let other apps write to your saved places, so pick one of these (both free):</p>
+  <ol>
+    <li><b>One by one into a Saved list.</b> Opens each place in Google Maps; tap <i>Save</i>, pick a list (e.g. "Want to go"), then come back for the next one.
+      <div style="margin-top:6px"><button class="primary" id="stepBtn">Open next place</button> <span id="stepInfo" class="count"></span></div></li>
+    <li><b>All at once as a map.</b> Download the file, go to <a href="https://www.google.com/maps/d/" target="_blank" rel="noopener">Google My Maps</a>, <i>Create a new map → Import</i>, choose the file. It appears in the Google Maps app under <i>You → Saved → Maps</i>.
+      <div style="margin-top:6px"><button id="kmlBtn">Download KML</button> <button id="csvBtn">Download CSV</button></div></li>
+  </ol>
+  <p class="count">Places you open from here are marked "Saved to Google" so you can track what's done.</p>
+  <div style="text-align:right"><button id="closeDlg">Close</button></div>
+</dialog>
+
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/leaflet.markercluster.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let places = [], selected = new Set(), markers = new Map(), status = {}, forceSetup = false, stepQueue = [];
+
+// ---------------------------------------------------------------- map
+const map = L.map("map", { worldCopyJump: true }).setView([25, 10], 2);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+const cluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 40 });
+map.addLayer(cluster);
+let fitted = false;
+
+// ---------------------------------------------------------------- status
+async function refreshStatus() {
+  try { status = await api("/api/status"); } catch { $("#statusText").textContent = "App not reachable"; return; }
+  const c = status.counts, done = c.done + c.error;
+  const labels = { idle: "Up to date", syncing: "Checking Instagram", processing: "Analysing",
+                   needs_login: "Needs login", error: "Problem" };
+  let text = status.message || labels[status.state] || status.state;
+  if (status.collection) text = `${status.collection.name} · ${done}/${c.total} posts analysed` +
+    (c.error ? ` · ${c.error} failed` : "") + ` · ${text}`;
+  $("#statusText").textContent = text;
+  $("#statusText").className = status.state === "error" || status.state === "needs_login" ? "err" : "";
+  $("#progress").style.width = c.total ? `${(100 * done / c.total).toFixed(1)}%` : "0";
+  $("#retryBtn").style.display = c.error ? "" : "none";
+
+  const needLogin = !status.logged_in || status.state === "needs_login";
+  const needCollection = !status.collection || forceSetup;
+  $("#setup").style.display = needLogin || needCollection ? "block" : "none";
+  $("#loginStep").style.display = needLogin ? "block" : "none";
+  $("#collectionStep").style.display = !needLogin && needCollection ? "block" : "none";
+  const l = status.login;
+  $("#loginBtn").disabled = l.state === "waiting";
+  $("#loginMsg").innerHTML = l.state === "waiting" ? "A browser window should be open. Finish logging in there…"
+    : l.state === "failed" ? `<span class="err">${esc(l.error)}</span>` : "";
+  if (!needLogin && needCollection && !loadedCollections) loadCollections();
+}
+
+let loadedCollections = false;
+async function loadCollections() {
+  loadedCollections = true;
+  $("#collectionMsg").textContent = "Fetching your collections…";
+  try {
+    const cols = await api("/api/collections");
+    $("#collectionSel").innerHTML = cols.map(c =>
+      `<option value="${esc(c.id)}">${esc(c.name)}${c.count != null ? ` (${c.count})` : ""}</option>`).join("");
+    if (status.collection) $("#collectionSel").value = status.collection.id;
+    $("#collectionMsg").textContent = "";
+  } catch (e) {
+    loadedCollections = false;
+    $("#collectionMsg").innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+}
+
+$("#loginBtn").onclick = () => api("/api/login", { method: "POST" }).then(refreshStatus);
+$("#useCollectionBtn").onclick = async () => {
+  const sel = $("#collectionSel");
+  await api("/api/collection", { method: "POST", body: { id: sel.value, name: sel.selectedOptions[0].text.replace(/ \(\d+\)$/, "") } });
+  forceSetup = false; refreshStatus();
+};
+$("#changeBtn").onclick = () => { forceSetup = true; loadedCollections = false; refreshStatus(); };
+$("#syncBtn").onclick = () => api("/api/sync", { method: "POST" }).then(refreshStatus);
+$("#retryBtn").onclick = () => api("/api/retry", { method: "POST" }).then(refreshStatus);
+
+// ---------------------------------------------------------------- places
+async function refreshPlaces() {
+  try { places = await api("/api/places"); } catch { return; }
+  render();
+}
+
+function visible() {
+  const q = $("#search").value.toLowerCase().trim();
+  const sf = $("#statusFilter").value;
+  return places.filter(p =>
+    (sf === "all" || (sf === "active" ? p.status !== "rejected" : p.status === sf)) &&
+    !($("#hideAreas").checked && p.category === "area") &&
+    !($("#hideLow").checked && p.confidence < 0.5) &&
+    (!q || [p.name, p.city, p.country, p.category, p.address].some(v => (v || "").toLowerCase().includes(q))));
+}
+
+function sourceLabel(m) {
+  return { ig_location: "location tag", caption: "caption", transcript: "said in video", ocr: "on screen", llm: "AI read" }[m] || m;
+}
+
+function render() {
+  const list = visible();
+  const el = $("#list");
+  if (!places.length) {
+    el.innerHTML = `<div class="empty">${status.counts?.total ? "Places will appear here as posts are analysed." : "No places yet."}</div>`;
+  } else if (!list.length) {
+    el.innerHTML = `<div class="empty">Nothing matches these filters.</div>`;
+  } else {
+    el.innerHTML = list.map(p => {
+      const src = p.sources[0] || {};
+      const methods = [...new Set(p.sources.map(s => sourceLabel(s.method)))].join(", ");
+      const where = [p.category && p.category !== "other" ? p.category : null, p.city, p.country].filter(Boolean).join(" · ");
+      return `<div class="place ${p.status}" data-id="${p.id}">
+        <input type="checkbox" ${selected.has(p.id) ? "checked" : ""} ${p.lat == null ? "disabled" : ""}>
+        <div>
+          <div class="name">${esc(p.name)}</div>
+          <div class="meta">
+            ${p.status === "saved" ? '<span class="tag saved">saved to Google</span>' : ""}
+            ${p.status === "approved" ? '<span class="tag">approved</span>' : ""}
+            ${p.lat == null ? '<span class="tag missing">not found on map</span>' : ""}
+            ${esc(where)}${where ? " · " : ""}${esc(methods)} · ${Math.round(p.confidence * 100)}%
+          </div>
+          ${src.evidence ? `<div class="ev" title="${esc(src.evidence)}">“${esc(src.evidence)}”</div>` : ""}
+        </div>
+        <div class="actions">
+          <a href="${esc(p.google_maps_url)}" target="_blank" rel="noopener" data-act="gmaps">Google Maps</a>
+          ${p.sources.filter(s => s.shortcode).slice(0, 3).map(s =>
+            `<a href="https://www.instagram.com/p/${esc(s.shortcode)}/" target="_blank" rel="noopener">@${esc(s.username || "post")}</a>`).join("")}
+          <button data-act="fix">${p.lat == null ? "Find on map" : "Fix location"}</button>
+          <button data-act="${p.status === "rejected" ? "restore" : "reject"}">${p.status === "rejected" ? "Restore" : "Not a place"}</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+  renderMarkers(list);
+  updateFooter();
+}
+
+function renderMarkers(list) {
+  cluster.clearLayers(); markers.clear();
+  for (const p of list) {
+    if (p.lat == null) continue;
+    const m = L.marker([p.lat, p.lon], { title: p.name });
+    m.bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.address || "")}<br>
+      <a href="${esc(p.google_maps_url)}" target="_blank" rel="noopener">Open in Google Maps</a>`);
+    m.on("click", () => focusRow(p.id));
+    cluster.addLayer(m); markers.set(p.id, m);
+  }
+  if (!fitted && markers.size) {
+    map.fitBounds(cluster.getBounds(), { padding: [30, 30], maxZoom: 13 }); fitted = true;
+  }
+}
+
+function focusRow(id) {
+  document.querySelectorAll(".place.focus").forEach(e => e.classList.remove("focus"));
+  const row = document.querySelector(`.place[data-id="${id}"]`);
+  if (row) { row.classList.add("focus"); row.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+}
+
+function updateFooter() {
+  const n = selected.size;
+  $("#selCount").textContent = n ? `${n} selected` : "Tick places to add them to Google Maps";
+  $("#approveBtn").disabled = !n;
+}
+
+$("#list").addEventListener("click", async e => {
+  const row = e.target.closest(".place"); if (!row) return;
+  const id = +row.dataset.id, p = places.find(x => x.id === id);
+  const act = e.target.dataset.act;
+  if (e.target.type === "checkbox") {
+    e.target.checked ? selected.add(id) : selected.delete(id); updateFooter(); return;
+  }
+  if (act === "gmaps") return;
+  if (act === "reject" || act === "restore") {
+    await api(`/api/places/${id}`, { method: "PATCH", body: { status: act === "reject" ? "rejected" : "suggested" } });
+    selected.delete(id); return refreshPlaces();
+  }
+  if (act === "fix") {
+    const q = prompt("Search OpenStreetMap for (add the town/country for best results):",
+                     [p.name, p.city || p.country].filter(Boolean).join(", "));
+    if (!q) return;
+    try { await api(`/api/places/${id}/regeocode`, { method: "POST", body: { query: q } }); fitted = true; await refreshPlaces();
+          const m = markers.get(id); if (m) { map.setView(m.getLatLng(), 15); m.openPopup(); } }
+    catch (err) { alert(err.message); }
+    return;
+  }
+  focusRow(id);
+  const m = markers.get(id);
+  if (m) cluster.zoomToShowLayer(m, () => m.openPopup());
+});
+
+["#search", "#statusFilter", "#hideAreas", "#hideLow"].forEach(s => $(s).addEventListener("input", render));
+
+$("#approveBtn").onclick = async () => {
+  for (const id of selected) await api(`/api/places/${id}`, { method: "PATCH", body: { status: "approved" } });
+  refreshPlaces();
+};
+
+// ---------------------------------------------------------------- Google
+const chosen = () => {
+  const ids = selected.size ? [...selected] : places.filter(p => p.status === "approved").map(p => p.id);
+  return places.filter(p => ids.includes(p.id) && p.lat != null);
+};
+$("#googleBtn").onclick = () => {
+  stepQueue = chosen();
+  if (!stepQueue.length) return alert("Tick some places first (or approve them).");
+  $("#dlgCount").textContent = stepQueue.length; updateStep(); $("#googleDlg").showModal();
+};
+function updateStep() {
+  $("#stepInfo").textContent = stepQueue.length ? `Next: ${stepQueue[0].name} (${stepQueue.length} left)` : "All done.";
+  $("#stepBtn").disabled = !stepQueue.length;
+}
+$("#stepBtn").onclick = async () => {
+  const p = stepQueue.shift(); if (!p) return;
+  window.open(p.google_maps_url, "_blank", "noopener");
+  await api(`/api/places/${p.id}`, { method: "PATCH", body: { status: "saved" } });
+  selected.delete(p.id); updateStep(); refreshPlaces();
+};
+async function download(fmt) {
+  const ids = chosen().map(p => p.id);
+  // The export covers everything approved or saved, so make sure this selection is included.
+  for (const id of ids) {
+    const p = places.find(x => x.id === id);
+    if (p.status !== "saved") await api(`/api/places/${id}`, { method: "PATCH", body: { status: "approved" } });
+  }
+  location.href = `/api/export.${fmt}?status=approved,saved`;
+  refreshPlaces();
+}
+$("#kmlBtn").onclick = () => download("kml");
+$("#csvBtn").onclick = () => download("csv");
+$("#closeDlg").onclick = () => $("#googleDlg").close();
+
+// ---------------------------------------------------------------- loop
+async function tick() { await refreshStatus(); await refreshPlaces(); }
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

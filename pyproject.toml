@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "instamap"
+version = "0.1.0"
+description = "Find the travel spots in your saved Instagram posts and reels, map them, send them to Google Maps."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "requests>=2.31",
+    "playwright>=1.44",
+]
+
+[project.optional-dependencies]
+# Speech-to-text, on-screen text and entity recognition. All run locally and free.
+ml = [
+    "faster-whisper>=1.0",
+    "rapidocr-onnxruntime>=1.3",
+    "spacy>=3.7",
+]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+instamap = "instamap.cli:main"
+
+[tool.setuptools]
+packages = ["instamap"]
+
+[tool.setuptools.package-data]
+instamap = ["static/*", "static/vendor/*", "static/vendor/images/*"]
