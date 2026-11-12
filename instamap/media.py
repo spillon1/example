@@ -11,13 +11,26 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+@functools.lru_cache(maxsize=1)
+def ffmpeg_exe() -> str | None:
+    """System ffmpeg if there is one, otherwise the copy bundled with imageio-ffmpeg."""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
 def have_ffmpeg() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return ffmpeg_exe() is not None
 
 
 def extract_audio(video: Path, out: Path) -> Path | None:
     """16 kHz mono WAV, the format Whisper wants. Returns None if the video has no audio."""
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", str(out)]
+    cmd = [ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", "16000", str(out)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0 or not out.exists() or out.stat().st_size < 1024:
         return None
@@ -27,7 +40,7 @@ def extract_audio(video: Path, out: Path) -> Path | None:
 def extract_frames(video: Path, out_dir: Path, interval: float, max_frames: int) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
+        ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(video),
         "-vf", f"fps=1/{interval},scale='min(720,iw)':-2",
         "-frames:v", str(max_frames), str(out_dir / "f_%03d.jpg"),
     ]

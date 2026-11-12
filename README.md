@@ -17,16 +17,28 @@ Everything runs on your own computer and nothing costs money: no paid APIs, no A
 | Picking out place names | a local LLM via [Ollama](https://ollama.com) if installed, otherwise spaCy plus rules | Ollama makes a big difference, see below |
 | Coordinates | OpenStreetMap ([Nominatim](https://nominatim.org), Photon as backup) | free, 1 lookup/second, cached |
 
-## Install
+## Install on Windows (easiest)
 
-You need Python 3.10+ and ffmpeg (`brew install ffmpeg` on a Mac, `sudo apt install ffmpeg` on Linux,
-or `winget install ffmpeg` on Windows).
+1. Download the zip, right-click it and choose **Extract All**.
+2. Open the extracted folder and double-click **Start InstaMap**.
+   If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+3. The first time, it installs what it needs (Python included, if you don't have it). That takes
+   5 to 15 minutes. After that it starts straight away.
+4. The app opens in your browser. Click **Log in to Instagram**, log in in the window that
+   appears (it uses Microsoft Edge or Chrome), pick your saved folder, and leave it to work.
+
+Keep the black InstaMap window open while it runs (minimise it if you like). Closing it stops InstaMap.
+Double-click **Start InstaMap** any time to open it again; it picks up where it left off.
+
+## Install manually (Mac, Linux, or if you prefer)
+
+You need Python 3.10 or newer. ffmpeg comes bundled.
 
 ```bash
 git clone <this repo> instamap && cd instamap
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[ml]"
-playwright install chromium                 # the browser window you log in with
+playwright install chromium     # only needed if you have neither Chrome nor Edge
 python -m spacy download en_core_web_sm
 ```
 

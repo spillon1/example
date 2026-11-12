@@ -17,6 +17,13 @@ import webbrowser
 from .config import settings
 
 
+def port_in_use(port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
 def lan_ip() -> str:
     """This computer's address on the local network."""
     import socket
@@ -80,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "lan", False):
         settings.host = "0.0.0.0"
     url = f"http://127.0.0.1:{settings.port}"
+    if port_in_use(settings.port):
+        # Already running (e.g. the launcher was double-clicked twice): just show it.
+        print(f"InstaMap is already running at {url}")
+        webbrowser.open(url)
+        return 0
     if settings.host == "0.0.0.0":
         print(f"On your phone (same Wi-Fi), open: http://{lan_ip()}:{settings.port}")
         print("Anyone on this network can open it too, so only use --lan on a network you trust.")

@@ -37,6 +37,22 @@ class NotLoggedIn(InstagramError):
 
 
 # --------------------------------------------------------------------------- login
+def _launch_browser(p, profile_dir: Path):
+    """Use the Edge or Chrome already on the computer, so there's no browser to download."""
+    opts = dict(headless=False, viewport={"width": 480, "height": 860},
+                args=["--disable-blink-features=AutomationControlled"])
+    for channel in ("msedge", "chrome", None):
+        try:
+            return p.chromium.launch_persistent_context(str(profile_dir), channel=channel, **opts)
+        except Exception as exc:
+            log.info("Couldn't open browser %s: %s", channel or "chromium", exc)
+    # Last resort: fetch Playwright's own Chromium once, then try again.
+    import subprocess
+    import sys
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+    return p.chromium.launch_persistent_context(str(profile_dir), **opts)
+
+
 def browser_login(profile_dir: Path, session_file: Path, timeout: int = 600) -> dict:
     """Open a browser window at instagram.com and wait until you've logged in.
 
@@ -46,10 +62,7 @@ def browser_login(profile_dir: Path, session_file: Path, timeout: int = 600) -> 
 
     profile_dir.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            str(profile_dir), headless=False, viewport={"width": 480, "height": 860},
-            user_agent=USER_AGENT,
-        )
+        ctx = _launch_browser(p, profile_dir)
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto(f"{BASE}/accounts/login/", wait_until="domcontentloaded")
@@ -60,6 +73,8 @@ def browser_login(profile_dir: Path, session_file: Path, timeout: int = 600) -> 
                     # Give the site a moment to finish setting csrftoken etc.
                     page.wait_for_timeout(2000)
                     cookies = {c["name"]: c["value"] for c in ctx.cookies(BASE)}
+                    # Later requests use the same browser identity the login came from.
+                    cookies["_ua"] = page.evaluate("navigator.userAgent")
                     session_file.write_text(json.dumps(cookies))
                     session_file.chmod(0o600)
                     return cookies
@@ -85,10 +100,12 @@ class InstagramClient:
             raise NotLoggedIn("No Instagram session. Log in first.")
         self.delay = delay
         self.http = session or requests.Session()
+        cookies = dict(cookies)
+        user_agent = cookies.pop("_ua", None) or USER_AGENT
         for name, value in cookies.items():
             self.http.cookies.set(name, value, domain=".instagram.com")
         self.http.headers.update({
-            "User-Agent": USER_AGENT,
+            "User-Agent": user_agent,
             "X-IG-App-ID": WEB_APP_ID,
             "X-CSRFToken": cookies.get("csrftoken", ""),
             "X-Requested-With": "XMLHttpRequest",

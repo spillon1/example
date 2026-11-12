@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "instamap"
-version = "0.1.0"
+version = "0.2.0"
 description = "Find the travel spots in your saved Instagram posts and reels, map them, send them to Google Maps."
 requires-python = ">=3.10"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn>=0.29",
     "requests>=2.31",
     "playwright>=1.44",
+    "imageio-ffmpeg>=0.5",  # bundled ffmpeg, so nothing extra to install
 ]
 
 [project.optional-dependencies]
